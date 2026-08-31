@@ -1133,25 +1133,49 @@ class ClashConfig:
 
         for link in self.links:
             try:
-                content = ""
+                # Keep the last valid subscription available while refreshing it.
+                # If the upstream request fails, the cached data is still merged
+                # into the generated subscription.
                 data = None
+                if link.content:
+                    try:
+                        cached_data = yaml.safe_load(link.content)
+                        if isinstance(cached_data, dict) \
+                                and isinstance(cached_data.get("proxy-groups"), list) \
+                                and isinstance(cached_data.get("proxies"), list):
+                            data = cached_data
+                        else:
+                            logger.warning(f'Cached Clash link "{link.name}" is invalid')
+                    except yaml.YAMLError as e:
+                        logger.warning(f'Failed to parse cached Clash link "{link.name}": {e}')
+
                 modified_at = datetime.fromisoformat(link.modified_at.isoformat() + "+00:00").timestamp()
                 now = datetime.now(timezone.utc).timestamp()
-                if not link.content or len(link.content) == 0 or modified_at < now - 3600:
-                    response = requests.get(link.url, headers={'User-Agent': self.user_agent})
-                    if response.status_code == 200:
+                if data is None or modified_at < now - 3600:
+                    try:
+                        response = requests.get(link.url, headers={'User-Agent': self.user_agent})
+                        if response.status_code != 200:
+                            raise requests.HTTPError(f"HTTP {response.status_code}")
+
                         content = response.text
-                        data = yaml.safe_load(content)
+                        refreshed_data = yaml.safe_load(content)
+                        if not isinstance(refreshed_data, dict) \
+                                or not isinstance(refreshed_data.get("proxy-groups"), list) \
+                                or not isinstance(refreshed_data.get("proxies"), list):
+                            raise ValueError("invalid Clash subscription content")
+
+                        data = refreshed_data
                         db = next(get_db())
                         dblink = crud.get_clash_link(db, link.id)
                         dblink.content = content
                         dblink.modified_at = datetime.now(timezone.utc)
                         db.commit()
-                        print(f'request {link.url} success')
-                    else:
-                        print(f'request {link.url} failed')
-                else:
-                    data = yaml.safe_load(link.content)
+                        logger.info(f'Clash link "{link.name}" refreshed successfully')
+                    except Exception as e:
+                        logger.warning(
+                            f'Failed to refresh Clash link "{link.name}"; '
+                            f'using cached content: {e}'
+                        )
 
                 if not data:
                     continue
@@ -1173,7 +1197,7 @@ class ClashConfig:
                     node_names.append(proxy["name"])
                     self.config["proxies"].append(proxy)
             except Exception as e:
-                print(e)
+                logger.warning(f'Failed to merge Clash link "{link.name}": {e}')
 
         builtins = [self.builtin_proxy_groups["PROXY"], 
                    self.builtin_proxy_groups["DIRECT"],
