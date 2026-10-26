@@ -88,11 +88,13 @@ export type ProxyGroupSettings = {
     interval: number;
   };
   fallback?: {
+    lazy: boolean;
     url: string;
     interval: number;
   };
   load_balance?: {
     strategy: string;
+    lazy: boolean;
     url: string;
     interval: number;
   };

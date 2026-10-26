@@ -103,11 +103,13 @@ const getDefaultValues = (): FormType => {
         interval: 300,
       },
       fallback: {
+        lazy: true,
         url: "http://cp.cloudflare.com/generate_204",
         interval: 300,
       },
       load_balance: {
         strategy: "consistent-hashing",
+        lazy: true,
         url: "http://cp.cloudflare.com/generate_204",
         interval: 300,
       },
@@ -120,9 +122,26 @@ const getDefaultValues = (): FormType => {
 };
 
 const formatProxyGroup = (group: ProxyGroup): FormType => {
+  const defaultSettings = getDefaultValues().settings;
   return {
     ...group,
     selected_proxies: group.proxies.split(",").filter((v) => v.length > 0),
+    settings: {
+      ...defaultSettings,
+      ...group.settings,
+      url_test: {
+        ...defaultSettings.url_test!,
+        ...group.settings.url_test,
+      },
+      fallback: {
+        ...defaultSettings.fallback!,
+        ...group.settings.fallback,
+      },
+      load_balance: {
+        ...defaultSettings.load_balance!,
+        ...group.settings.load_balance,
+      },
+    },
   };
 };
 
@@ -750,6 +769,17 @@ export const ClashProxyGroupDialog: FC<ClashProxyGroupDialogProps> = () => {
                                 )}
                               />
                             </FormControl>
+                            <FormControl
+                              pt="1"
+                              display="flex"
+                              alignItems="center"
+                            >
+                              <FormLabel mb="0">lazy</FormLabel>
+                              <Switch
+                                colorScheme="primary"
+                                {...form.register("settings.load_balance.lazy")}
+                              />
+                            </FormControl>
                           </VStack>
                         )}
                         {type == "url-test" && (
@@ -814,6 +844,17 @@ export const ClashProxyGroupDialog: FC<ClashProxyGroupDialogProps> = () => {
                                 type="text"
                                 borderRadius="6px"
                                 {...form.register("settings.fallback.interval")}
+                              />
+                            </FormControl>
+                            <FormControl
+                              pt="1"
+                              display="flex"
+                              alignItems="center"
+                            >
+                              <FormLabel mb="0">lazy</FormLabel>
+                              <Switch
+                                colorScheme="primary"
+                                {...form.register("settings.fallback.lazy")}
                               />
                             </FormControl>
                           </VStack>

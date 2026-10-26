@@ -1038,13 +1038,15 @@ class ClashConfig:
     def write_proxy_group_setting(self, obj: ProxyGroup, proxy_group: dict):
         if obj.type == "url-test":
             proxy_group["tolerance"] = R(obj.settings, "url_test.tolerance")
-            proxy_group["lazy"] = R(obj.settings, "url_test.lazy")
+            proxy_group["lazy"] = R(obj.settings, "url_test.lazy", True)
             proxy_group["url"] = R(obj.settings, "url_test.url")
             proxy_group["interval"] = R(obj.settings, "url_test.interval")
         elif obj.type == "fallback":
+            proxy_group["lazy"] = R(obj.settings, "fallback.lazy", True)
             proxy_group["url"] = R(obj.settings, "fallback.url")
             proxy_group["interval"] = R(obj.settings, "fallback.interval")
         elif obj.type == "load-balance":
+            proxy_group["lazy"] = R(obj.settings, "load_balance.lazy", True)
             proxy_group["url"] = R(obj.settings, "load_balance.url")
             proxy_group["interval"] = R(obj.settings, "load_balance.interval")
             proxy_group["strategy"] = R(obj.settings, "load_balance.strategy")
