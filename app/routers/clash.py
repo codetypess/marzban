@@ -14,6 +14,7 @@ from app import app, logger, xray
 from app.db import Session, crud, get_db
 from app.db.models import User
 from app.subscription.share import SERVER_IP
+from app.subscription.v2ray import V2rayShareLink
 
 from app.models.user import UserResponse
 from app.models.admin import Admin
@@ -620,14 +621,24 @@ def generate_subscription(db: Session, dbuser: User, user_agent: str):
     nocase_ua = user_agent.lower()
     option = ClashConfig.Option()
 
-    if re.match('^shadowrocket', nocase_ua):
+    if re.match(r'^anyway(?:/|\s|$)', nocase_ua):
+        # Anyway currently accepts Clash Meta subscriptions.
+        option.support_reality = True
+        option.support_vless = True
+        option.support_hysteria2 = True
+        option.support_rule_geosite = True
+        option.support_rule_provider = True
+        option.support_rule_logic = True
+        option.support_rule_network = True
+        option.setting = "clash-meta"
+    elif re.match('^shadowrocket', nocase_ua):
         option.support_reality = True
         option.support_vless = True
         option.support_hysteria2 = True
         option.support_rule_script = True
         option.support_rule_logic = True
         option.support_rule_provider = True
-    elif re.match('^(clash-verge|clash-?meta|clashx meta)', nocase_ua):
+    elif re.match(r'^(clash-verge|clash[.-]?meta|clashx meta|flclash|mihomo)(?=/|\s|$)', nocase_ua):
         option.support_reality = True
         option.support_vless = True
         option.support_hysteria2 = True
@@ -653,7 +664,7 @@ def generate_subscription(db: Session, dbuser: User, user_agent: str):
     logger.info(f"Generate subscription: ua={user_agent} option={option}")
 
     if option.is_v2ray:
-        content = "\n".join(generate_v2ray_links(dbuser.username, db))
+        content = "\n".join(generate_v2ray_links(dbuser.username, db, user_agent=user_agent))
         content = base64.b64encode(content.encode()).decode()
         return Response(content=content, media_type="text/plain", headers=response_headers)
     else:
@@ -1311,21 +1322,25 @@ def generate_subscription_with_rules(
 
     return clash.to_yaml()
 
-def generate_v2ray_links(username: str, db: Session = next(get_db())):
+def generate_v2ray_links(username: str, db: Session, user_agent: str = ""):
     dbuser = crud.get_user(db, username)
     option = ClashConfig.Option()
     option.support_reality = True
     option.support_vless = True
     option.is_v2ray = True
-    clash = ClashConfig(db=db, dbuser=dbuser, option=option)
+    clash = ClashConfig(db=db, dbuser=dbuser, user_agent=user_agent, option=option)
     clash.init_proxies()
     clash.write_proxies()
 
-    links = []
+    links = V2rayShareLink()
     salt = secrets.token_hex(8)
 
     for proxy in clash.config["proxies"]:
-        inbound = xray.config.inbounds_by_tag.get(proxy["inbound"]).copy()
+        inbound = xray.config.inbounds_by_tag.get(proxy.get("inbound"))
+        if inbound is None:
+            # External Clash nodes do not have a local Xray inbound to export.
+            continue
+        inbound = inbound.copy()
         settings = clash.protocol_settings.get(inbound["protocol"])
 
         port = proxy["port"]
@@ -1362,10 +1377,10 @@ def generate_v2ray_links(username: str, db: Session = next(get_db())):
             "alpn": alpn,
         })
 
-        # links.append(get_v2ray_link(
-        #     remark=proxy["inbound"],
-        #     address=proxy["server"],
-        #     inbound=inbound,
-        #     settings=settings))
+        links.add(
+            remark=proxy["name"],
+            address=proxy["server"],
+            inbound=inbound,
+            settings=settings)
 
-    return links
+    return links.render()
