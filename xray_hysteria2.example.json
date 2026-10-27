@@ -1,0 +1,23 @@
+{
+  "inbounds": [
+    {
+      "tag": "Hysteria2 HK",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "hysteria",
+      "settings": {"version": 2, "users": []},
+      "streamSettings": {
+        "network": "hysteria",
+        "security": "tls",
+        "hysteriaSettings": {"version": 2},
+        "tlsSettings": {
+          "certificates": [{
+            "certificateFile": "/etc/ssl/hysteria/fullchain.pem",
+            "keyFile": "/etc/ssl/hysteria/privkey.pem"
+          }]
+        }
+      }
+    }
+  ],
+  "outbounds": [{"protocol": "freedom", "tag": "DIRECT"}]
+}

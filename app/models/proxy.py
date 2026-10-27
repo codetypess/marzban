@@ -1,13 +1,14 @@
 import json
 import re
 from enum import Enum
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.utils.system import random_password
 from xray_api.types.account import (
+    Hysteria2Account,
     ShadowsocksAccount,
     ShadowsocksMethods,
     TrojanAccount,
@@ -23,15 +24,18 @@ NOISE_PATTERN = re.compile(
 
 
 class ProxyTypes(str, Enum):
-    # proxy_type = protocol
+    # Hysteria2 maps to Xray's "hysteria" protocol with version 2.
 
     VMess = "vmess"
     VLESS = "vless"
     Trojan = "trojan"
     Shadowsocks = "shadowsocks"
+    Hysteria2 = "hysteria2"
 
     @property
     def account_model(self):
+        if self == self.Hysteria2:
+            return Hysteria2Account
         if self == self.VMess:
             return VMessAccount
         if self == self.VLESS:
@@ -43,6 +47,8 @@ class ProxyTypes(str, Enum):
 
     @property
     def settings_model(self):
+        if self == self.Hysteria2:
+            return Hysteria2Settings
         if self == self.VMess:
             return VMessSettings
         if self == self.VLESS:
@@ -85,6 +91,29 @@ class TrojanSettings(ProxySettings):
 
     def revoke(self):
         self.password = random_password()
+
+
+class Hysteria2Settings(ProxySettings):
+    password: str = Field(default_factory=random_password, min_length=1)
+
+    def revoke(self):
+        self.password = random_password()
+
+
+class Hysteria2Options(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sni: str = ""
+    allow_insecure: bool = False
+    obfs: Literal["", "salamander"] = ""
+    obfs_password: str = ""
+    up_mbps: int | None = Field(default=None, gt=0)
+    down_mbps: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_obfs(self):
+        if self.obfs and not self.obfs_password:
+            raise ValueError("Salamander requires a nonempty obfs_password")
+        return self
 
 
 class ShadowsocksSettings(ProxySettings):

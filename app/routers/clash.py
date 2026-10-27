@@ -564,7 +564,8 @@ def get_clash_proxy_inbounds(db: Session = Depends(get_db),
             security=ib["tls"] if ib["tls"] else "none",
             network=ib["network"],
             servername=sni,
-            port=ib["port"]
+            port=ib["port"],
+            settings=ib.get("hysteria2", {}),
         ))
     
     inbounds.sort(key=lambda v: v.name)
@@ -1028,6 +1029,23 @@ class ClashConfig:
         self.config["proxies"].append(node)
         return True
     
+    def add_hysteria2(self, proxy: Proxy):
+        from app.subscription.hysteria2 import clash_node
+        from app.models.proxy import Hysteria2Options
+        if not self.option.support_hysteria2:
+            return False
+        settings = self.protocol_settings.get("hysteria2")
+        if not settings:
+            return False
+        inbound = xray.config.inbounds_by_tag[proxy.inbound]
+        options = Hysteria2Options.model_validate({
+            **inbound["hysteria2"], **proxy.settings.get("hysteria2", {})
+        }).model_dump(exclude_none=True)
+        self.config["proxies"].append(clash_node(
+            proxy.name, proxy.server, proxy.port,
+            settings["password"], options))
+        return True
+
     def write_proxy(self, proxy: Proxy):
         if not self.active_inbounds.get(proxy.inbound):
             return False
@@ -1035,7 +1053,9 @@ class ClashConfig:
         inbound = xray.config.inbounds_by_tag.get(proxy.inbound)
         ibtype = R(inbound, "protocol")
 
-        if ibtype == "trojan":
+        if ibtype == "hysteria2":
+            return self.add_hysteria2(proxy)
+        elif ibtype == "trojan":
             return self.add_trojan(proxy)
         elif ibtype == "shadowsocks":
             return self.add_shadowsocks(proxy)
@@ -1076,7 +1096,7 @@ class ClashConfig:
             proxy = self.proxies_by_id.get(int(id))
             if proxy and proxy.exported:
                 inbound = xray.config.inbounds_by_tag.get(proxy.inbound)
-                if inbound["protocol"] != "vless" or self.is_support_vless(inbound):
+                if inbound and (inbound["protocol"] != "vless" or self.is_support_vless(inbound)):
                     return proxy
                 
     def is_hidden(self, proxy: Proxy):
@@ -1231,7 +1251,7 @@ class ClashConfig:
                 "name": obj.name,
                 "type": obj.type,
                 "icon": R(obj.settings, "icon"),
-                "proxies": proxies,
+                "proxies": proxies or ["REJECT"],
             }
             self.config["proxy-groups"].insert(0, proxy_group)
             self.write_proxy_group_setting(obj, proxy_group)
@@ -1327,6 +1347,7 @@ def generate_v2ray_links(username: str, db: Session, user_agent: str = ""):
     option = ClashConfig.Option()
     option.support_reality = True
     option.support_vless = True
+    option.support_hysteria2 = True
     option.is_v2ray = True
     clash = ClashConfig(db=db, dbuser=dbuser, user_agent=user_agent, option=option)
     clash.init_proxies()
@@ -1336,6 +1357,10 @@ def generate_v2ray_links(username: str, db: Session, user_agent: str = ""):
     salt = secrets.token_hex(8)
 
     for proxy in clash.config["proxies"]:
+        if proxy.get("type") == "hysteria2":
+            from app.subscription.hysteria2 import share_link
+            links.add_link(share_link(proxy))
+            continue
         inbound = xray.config.inbounds_by_tag.get(proxy.get("inbound"))
         if inbound is None:
             # External Clash nodes do not have a local Xray inbound to export.

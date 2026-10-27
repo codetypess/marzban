@@ -3,20 +3,24 @@ import binascii
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import x25519
 from OpenSSL import crypto
 
 
 def get_cert_SANs(cert: bytes):
     cert = x509.load_pem_x509_certificate(cert, default_backend())
-    san_list = []
-    for extension in cert.extensions:
-        if isinstance(extension.value, x509.SubjectAlternativeName):
-            san = extension.value
-            for name in san:
-                san_list.append(name.value)
-    return san_list
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except x509.ExtensionNotFound:
+        return []
+    return san.get_values_for_type(x509.DNSName) + [
+        str(address) for address in san.get_values_for_type(x509.IPAddress)
+    ]
+
+
+def get_cert_fingerprint(cert: bytes):
+    return x509.load_pem_x509_certificate(cert).fingerprint(hashes.SHA256()).hex()
 
 
 def generate_certificate():

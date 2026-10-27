@@ -3,14 +3,14 @@ import json
 from datetime import datetime
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
-from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, validator
 from typing import List, Optional
 
 RULE_CONTENT_REGEXP = re.compile(r'^(?=.{1,128}\b)[\w\-/.:,() ]+$')
 RULESET_NAME_REGEXP = re.compile(r'^(?=.{1,32}\b)[\w]+$')
 PROXY_NAME_REGEXP = re.compile(r'^(?=.{1,64}\b)[^\'"]+$')
 PROXY_TAG_REGEXP = re.compile(r'^(?=.{1,64}\b)[\w\-.:@#]+$')
-PROXY_INBOUND_REGEXP = re.compile(r'^(?=.{1,64}\b)[\w ]+$')
+PROXY_INBOUND_REGEXP = re.compile(r'^(?=.{1,64}\b)[\w -]+$')
 PROXY_PORT_REGEXP = re.compile(r'^(?=.{1,11}\b)[0-9:]+$')
 PROXY_SERVER_REGEXP = re.compile(r'^(?=.{1,64}\b)[\w\-./]+$')
 PROXY_GROUP_PROXIES_REGEXP = re.compile(r'^(?=.{1,512})[\w,#\.]+$')
@@ -61,6 +61,12 @@ class ClashProxy(BaseModel):
     
     @field_validator('server', check_fields=False)
     def validate_server(cls, v):
+        if ":" in v:
+            from ipaddress import ip_address
+            try:
+                return str(ip_address(v.strip("[]")))
+            except ValueError:
+                raise value_error('InvalidProxyServer', 'Invalid IP address')
         if not PROXY_SERVER_REGEXP.match(v):
             raise value_error('InvalidProxyServer', 'server only accept "A-Za-z0-9/-._"')
         return v
@@ -68,11 +74,28 @@ class ClashProxy(BaseModel):
     @field_validator('inbound', check_fields=False)
     def validate_inbound(cls, v):
         if not PROXY_INBOUND_REGEXP.match(v):
-            if not v or v.count() == 0:
+            if not v:
                 raise value_error('NoProxyInbound', 'no proxies selected')
             else:
                 raise ValueError('inbound only accept "A-Za-z0-9 "')
         return v
+
+    @model_validator(mode="after")
+    def validate_hysteria2(self):
+        from app import xray
+        from app.models.proxy import Hysteria2Options
+        inbound = xray.config.inbounds_by_tag.get(self.inbound, {})
+        if inbound.get("protocol") == "hysteria2":
+            ports = self.port.split(":")
+            if len(ports) > 2 or not all(p.isdigit() and 1 <= int(p) <= 65535 for p in ports):
+                raise ValueError("Hysteria 2 ports must be between 1 and 65535")
+            if len(ports) == 2 and int(ports[0]) > int(ports[1]):
+                raise ValueError("Port range must be ascending")
+            overrides = self.settings.get("hysteria2", {})
+            options = Hysteria2Options.model_validate({**inbound["hysteria2"], **overrides})
+            self.settings = {**self.settings, "hysteria2": options.model_dump(include=set(overrides))}
+        return self
+
 
 class ClashProxyCreate(ClashProxy):
     pass
@@ -167,6 +190,7 @@ class ClashProxyTagsResponse(BaseModel):
     data: List[ClashProxyTagResponse]
 
 class ClashProxyInboundResponse(BaseModel):
+    settings: dict = Field(default_factory=dict)
     name: str
     type: str
     server: str
@@ -228,4 +252,3 @@ class ClashRulesetResponse(ClashRuleset):
 
 class ClashRulesetsResponse(BaseModel):
     data: List[ClashRulesetResponse]
-    

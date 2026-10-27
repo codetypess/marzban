@@ -52,6 +52,7 @@ import { z } from "zod";
 import { DuplicateIcon, InfoIcon } from "./ClashModal";
 import { DeleteIcon } from "./DeleteUserModal";
 import { Icon } from "./Icon";
+import { Hysteria2Options } from "./Hysteria2Options";
 
 const iconProps = {
   baseStyle: {
@@ -120,6 +121,7 @@ const getDefaultValues = (): FormType => {
       shadowsocks: {
         udp: true,
       },
+      hysteria2: {},
     },
   };
 };
@@ -161,7 +163,11 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
   const updateForm = (proxy: Proxy | null) => {
     if (proxy) {
       const inbound = findInbound(proxy.inbound);
-      form.reset(formatProxy(proxy));
+      const formatted = formatProxy(proxy);
+      form.reset({ ...formatted, settings: {
+        ...getDefaultValues().settings, ...formatted.settings,
+        hysteria2: { ...formatted.settings.hysteria2 },
+      }});
       setInbound(inbound);
       setPort(proxy.port);
     } else {
@@ -214,6 +220,8 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
     } else if (inbound?.type == "vmess") {
       settings.vmess = values.settings.vmess;
       removeUndefined(settings.vmess, defaultSettings.vmess);
+    } else if (inbound?.type == "hysteria2") {
+      settings.hysteria2 = values.settings.hysteria2;
     } else if (inbound?.type == "shadowsocks") {
       settings.shadowsocks = values.settings.shadowsocks;
       removeUndefined(settings.shadowsocks, defaultSettings.shadowsocks);
@@ -421,7 +429,14 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
                       placeholder="Select inbound"
                       {...form.register("inbound", {
                         onChange: (e) => {
-                          const newInbound = findInbound(e.target.value)!;
+                          const newInbound = findInbound(e.target.value);
+                          if (!newInbound) {
+                            setInbound(null);
+                            return;
+                          }
+                          if (newInbound.type === "hysteria2") {
+                            form.setValue("settings.hysteria2", {});
+                          }
                           const curr = form.getValues();
                           if (newInbound.type == "trojan") {
                             form.setValue("settings.trojan.security", "tls");
@@ -489,7 +504,7 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
                       value={inbound?.network || ""}
                     />
                   </Flex>
-                  {inbound && inbound.type != "shadowsocks" && (
+                  {inbound && inbound.type != "shadowsocks" && inbound.type != "hysteria2" && (
                     <FormControl w="full">
                       <FormLabel>{t("clash.proxy.security")}</FormLabel>
                       {inbound.security == "none" && (
@@ -517,6 +532,12 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
                           value={inbound?.security}
                         />
                       )}
+                    </FormControl>
+                  )}
+                  {inbound?.type === "hysteria2" && (
+                    <FormControl w="full">
+                      <FormLabel>{t("clash.proxy.security")}</FormLabel>
+                      <Input size="sm" borderRadius="6px" disabled value="TLS" />
                     </FormControl>
                   )}
                 </HStack>
@@ -586,7 +607,7 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
                             />
                           </FormControl>
                         )}
-                        {inbound && inbound.type != "shadowsocks" && (
+                        {inbound && inbound.type != "shadowsocks" && inbound.type != "hysteria2" && (
                           <VStack w="full">
                             {inbound.type == "trojan" && (
                               <FormControl>
@@ -731,6 +752,7 @@ export const ClashProxyDialog: FC<ClashProxyDialogProps> = () => {
                             </HStack>
                           </VStack>
                         )}
+                        {inbound?.type === "hysteria2" && <Hysteria2Options disabled={disabled} defaults={inbound.settings} />}
                         {inbound?.type == "shadowsocks" && (
                           <HStack pt={1} w="full" gap="4">
                             <FormControl

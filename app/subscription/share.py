@@ -327,6 +327,28 @@ def process_inbounds_and_tags(
                     }
                 )
 
+                if protocol == "hysteria2":
+                    from app.subscription.hysteria2 import clash_node, share_link, singbox_outbound, xray_outbound
+                    options = {**inbound["hysteria2"], "sni": sni or inbound["hysteria2"].get("sni", "")}
+                    if host["allowinsecure"] is not None:
+                        options["allow_insecure"] = host["allowinsecure"]
+                    remark = host["remark"].format_map(format_variables)
+                    if hasattr(conf, "_remark_validation"):
+                        remark = conf._remark_validation(remark)
+                    node = clash_node(remark, address.format_map(format_variables), host_inbound["port"],
+                                      settings.password, options)
+                    if isinstance(conf, V2rayShareLink):
+                        conf.add_link(share_link(node))
+                    elif isinstance(conf, ClashMetaConfiguration):
+                        conf.data["proxies"].append(node)
+                        conf.proxy_remarks.append(remark)
+                    elif isinstance(conf, SingBoxConfiguration):
+                        conf.add_outbound(singbox_outbound(node))
+                        conf.proxy_remarks.append(remark)
+                    elif isinstance(conf, V2rayJsonConfig):
+                        conf.add_config(remark, [xray_outbound(node, inbound.get("certificate_sha256", ""))])
+                    continue
+
                 conf.add(
                     remark=host["remark"].format_map(format_variables),
                     address=address.format_map(format_variables),

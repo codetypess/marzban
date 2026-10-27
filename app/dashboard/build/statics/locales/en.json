@@ -314,5 +314,13 @@
   "usersTable.noUserMatched": "It seems there is no user matched with what you are looking for",
   "usersTable.status": "status",
   "usersTable.sortByExpire": "Sort by expire",
-  "usersTable.total": "Total"
+  "usersTable.total": "Total",
+  "userDialog.hysteria2Desc": "Encrypted QUIC proxy with individual user credentials",
+  "clash.proxy.obfs": "Obfuscation",
+  "clash.proxy.obfsPassword": "Obfuscation password",
+  "clash.proxy.upMbps": "Upload bandwidth (Mbps, optional)",
+  "clash.proxy.downMbps": "Download bandwidth (Mbps, optional)",
+  "clash.proxy.obfsNone": "None",
+  "clash.proxy.inheritInfo": "Options inherit from the inbound unless you change them here.",
+  "clash.proxy.restoreInheritance": "Use inbound defaults"
 }

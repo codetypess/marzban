@@ -314,5 +314,13 @@
   "usersTable.noUserMatched": "没有找到您搜索的用户",
   "usersTable.status": "状态",
   "usersTable.sortByExpire": "按过期时间排序",
-  "usersTable.total": "总共"
+  "usersTable.total": "总共",
+  "userDialog.hysteria2Desc": "基于 QUIC 的加密代理，支持独立用户密码",
+  "clash.proxy.obfs": "混淆",
+  "clash.proxy.obfsPassword": "混淆密码",
+  "clash.proxy.upMbps": "上行带宽（Mbps，可选）",
+  "clash.proxy.downMbps": "下行带宽（Mbps，可选）",
+  "clash.proxy.obfsNone": "不启用",
+  "clash.proxy.inheritInfo": "默认使用入站配置，仅保存您在此修改的参数。",
+  "clash.proxy.restoreInheritance": "使用入站默认值"
 }

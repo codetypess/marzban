@@ -1787,6 +1787,7 @@ def get_clash_proxy_setting(protocol):
         "vless": {"security": "tls", "fingerprint": "chrome", "udp": True, "allow_insecure": False},
         "vmess": {"fingerprint": "chrome", "udp": True, "allow_insecure": False},
         "shadowsocks": {"udp": True},
+        "hysteria2": {"allow_insecure": False},
     }
     return settings.get(protocol, {})
 

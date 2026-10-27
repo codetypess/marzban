@@ -13,9 +13,10 @@ export type ProxyTag = {
 };
 
 export type ProxyInbound = {
+  settings?: ProxySettings["hysteria2"];
   name: string;
   server: string;
-  type: "trojan" | "vless" | "vmess" | "shadowsocks";
+  type: "trojan" | "vless" | "vmess" | "shadowsocks" | "hysteria2";
   security: string;
   network: string;
   servername: string;
@@ -23,6 +24,14 @@ export type ProxyInbound = {
 };
 
 export type ProxySettings = {
+  hysteria2?: {
+    sni?: string;
+    allow_insecure?: boolean;
+    obfs?: "" | "salamander";
+    obfs_password?: string;
+    up_mbps?: number | null;
+    down_mbps?: number | null;
+  };
   icon?: string; // used in range ports
   hidden?: boolean; // hidden in builtin groups
   trojan?: {

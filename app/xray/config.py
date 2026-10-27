@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from copy import deepcopy
+from ipaddress import ip_address
 from pathlib import PosixPath
 from typing import Union
 
@@ -11,9 +12,9 @@ from sqlalchemy import func
 
 from app.db import GetDB
 from app.db import models as db_models
-from app.models.proxy import ProxyTypes
+from app.models.proxy import Hysteria2Options, ProxyTypes
 from app.models.user import UserStatus
-from app.utils.crypto import get_cert_SANs, get_x25519_public_key
+from app.utils.crypto import get_cert_SANs, get_cert_fingerprint, get_x25519_public_key
 from config import DEBUG, XRAY_EXCLUDE_INBOUND_TAGS, XRAY_FALLBACKS_INBOUND_TAG
 
 
@@ -142,7 +143,8 @@ class XRayConfig(dict):
 
     def _resolve_inbounds(self):
         for inbound in self['inbounds']:
-            if not inbound['protocol'] in ProxyTypes._value2member_map_:
+            protocol = "hysteria2" if inbound['protocol'] == "hysteria" else inbound['protocol']
+            if protocol not in ProxyTypes._value2member_map_:
                 continue
 
             if inbound['tag'] in XRAY_EXCLUDE_INBOUND_TAGS:
@@ -150,12 +152,23 @@ class XRayConfig(dict):
 
             if not inbound.get('settings'):
                 inbound['settings'] = {}
-            if not inbound['settings'].get('clients'):
+            if protocol == "hysteria2":
+                if inbound['settings'].get('version') != 2:
+                    raise ValueError(f"Hysteria inbound {inbound['tag']} requires settings.version = 2")
+                if 'clients' in inbound['settings']:
+                    inbound['settings']['users'] = inbound['settings'].pop('clients')
+                inbound['settings'].setdefault('users', [])
+                stream = inbound.get('streamSettings', {})
+                if stream.get('method', stream.get('network')) != 'hysteria' or stream.get('security') != 'tls':
+                    raise ValueError(f"Hysteria inbound {inbound['tag']} requires hysteria transport and TLS")
+                if stream.get('hysteriaSettings', {}).get('auth'):
+                    raise ValueError(f"Hysteria inbound {inbound['tag']} must use per-user auth in settings.users")
+            elif not inbound['settings'].get('clients'):
                 inbound['settings']['clients'] = []
 
             settings = {
                 "tag": inbound["tag"],
-                "protocol": inbound["protocol"],
+                "protocol": protocol,
                 "port": None,
                 "network": "tcp",
                 "tls": 'none',
@@ -179,7 +192,7 @@ class XRayConfig(dict):
 
             # stream settings
             if stream := inbound.get('streamSettings'):
-                net = stream.get('network', 'tcp')
+                net = stream.get('method', stream.get('network', 'tcp'))
                 net_settings = stream.get(f"{net}Settings", {})
                 security = stream.get("security")
                 tls_settings = stream.get(f"{security}Settings")
@@ -197,12 +210,15 @@ class XRayConfig(dict):
                     # settings['fp']
                     # settings['alpn']
                     settings['tls'] = 'tls'
+                    certificate_fingerprints = []
                     for certificate in tls_settings.get('certificates', []):
 
                         if certificate.get("certificateFile", None):
                             with open(certificate['certificateFile'], 'rb') as file:
                                 cert = file.read()
                                 settings['sni'].extend(get_cert_SANs(cert))
+                                if protocol == 'hysteria2':
+                                    certificate_fingerprints.append(get_cert_fingerprint(cert))
 
                         if certificate.get("certificate", None):
                             cert = certificate['certificate']
@@ -211,6 +227,11 @@ class XRayConfig(dict):
                             if isinstance(cert, str):
                                 cert = cert.encode()
                             settings['sni'].extend(get_cert_SANs(cert))
+                            if protocol == 'hysteria2':
+                                certificate_fingerprints.append(get_cert_fingerprint(cert))
+
+                    if protocol == 'hysteria2':
+                        settings['certificate_sha256'] = ','.join(certificate_fingerprints)
 
                 elif security == 'reality':
                     settings['fp'] = 'chrome'
@@ -338,13 +359,33 @@ class XRayConfig(dict):
                     elif host and isinstance(host, list):
                         settings['host'] = host[0]
 
+            if protocol == "hysteria2":
+                settings['network'] = 'udp'
+                dns_names = []
+                for name in settings['sni']:
+                    try:
+                        ip_address(name)
+                    except ValueError:
+                        dns_names.append(name)
+                names = [name for name in dns_names if '*' not in name] or dns_names or settings['sni']
+                options = Hysteria2Options(sni=tls_settings.get('serverName') or next(iter(names), ''))
+                masks = stream.get('finalmask', {}).get('udp', [])
+                if masks:
+                    if len(masks) != 1 or masks[0].get('type') != 'salamander':
+                        raise ValueError(f"Hysteria inbound {inbound['tag']} only supports Salamander client obfuscation")
+                    mask = masks[0].get('settings', {})
+                    if mask.get('packetSize'):
+                        raise ValueError(f"Hysteria inbound {inbound['tag']} Gecko obfuscation cannot be exported as Salamander")
+                    options = Hysteria2Options(sni=options.sni, obfs='salamander', obfs_password=mask.get('password', ''))
+                settings['hysteria2'] = options.model_dump(exclude_none=True)
+
             self.inbounds.append(settings)
             self.inbounds_by_tag[inbound['tag']] = settings
 
             try:
-                self.inbounds_by_protocol[inbound['protocol']].append(settings)
+                self.inbounds_by_protocol[protocol].append(settings)
             except KeyError:
-                self.inbounds_by_protocol[inbound['protocol']] = [settings]
+                self.inbounds_by_protocol[protocol] = [settings]
 
     def get_inbound(self, tag) -> dict:
         for inbound in self['inbounds']:
@@ -408,7 +449,7 @@ class XRayConfig(dict):
 
                 for inbound in inbounds:
                     clients = config.get_inbound(inbound['tag'])[
-                        'settings']['clients']
+                        'settings']['users' if proxy_type == 'hysteria2' else 'clients']
 
                     for row in rows:
                         user_id, username, settings, excluded_inbound_tags = row
@@ -420,6 +461,8 @@ class XRayConfig(dict):
                             "email": f"{user_id}.{username}",
                             **settings
                         }
+                        if proxy_type == 'hysteria2':
+                            client['auth'] = client.pop('password')
 
                         # XTLS currently only supports transmission methods of TCP and mKCP
                         if client.get('flow') and (

@@ -395,7 +395,7 @@ const RadioCard: FC<
               </FormControl>
             </VStack>
           )}
-          {title === "trojan" && isSelected && (
+          {(title === "trojan" || title === "hysteria2") && isSelected && (
             <VStack alignItems="flex-start" w="full">
               <FormControl height="66px">
                 <Text fontSize="sm" pb={1}>
@@ -408,7 +408,7 @@ const RadioCard: FC<
                   pl={2}
                   pr={2}
                   placeholder={t("userDialog.generatedByDefault")}
-                  {...form.register("proxies.trojan.password")}
+                  {...form.register(`proxies.${title}.password`)}
                 />
               </FormControl>
             </VStack>

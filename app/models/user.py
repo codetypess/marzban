@@ -65,7 +65,7 @@ class User(BaseModel):
     data_limit_reset_strategy: UserDataLimitResetStrategy = (
         UserDataLimitResetStrategy.no_reset
     )
-    inbounds: Dict[ProxyTypes, List[str]] = {}
+    inbounds: Dict[ProxyTypes, List[str]] = Field(default_factory=dict, validate_default=True)
     sub_url_prefix: Union[None, str] = ""
     sub_tags: Union[None, str] = ""
     note: Optional[str] = Field(None, nullable=True)
@@ -179,7 +179,7 @@ class UserCreate(User):
 
             if tags:
                 for tag in tags:
-                    if tag not in xray.config.inbounds_by_tag:
+                    if tag not in xray.config.inbounds_by_tag or xray.config.inbounds_by_tag[tag]["protocol"] != proxy_type:
                         raise ValueError(f"Inbound {tag} doesn't exist")
 
             # elif isinstance(tags, list) and not tags:
@@ -256,7 +256,7 @@ class UserModify(User):
                 #     raise ValueError(f"{proxy_type} inbounds cannot be empty")
 
                 for tag in tags:
-                    if tag not in xray.config.inbounds_by_tag:
+                    if tag not in xray.config.inbounds_by_tag or xray.config.inbounds_by_tag[tag]["protocol"] != proxy_type:
                         raise ValueError(f"Inbound {tag} doesn't exist")
 
         return inbounds
