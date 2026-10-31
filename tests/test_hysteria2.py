@@ -255,6 +255,45 @@ def test_subscription_routes_use_existing_pipeline(client, db):
     assert yaml.safe_load(response.text)["proxies"][0]["type"] == "hysteria2"
 
 
+@pytest.mark.parametrize("tags", ["", "hk"])
+@pytest.mark.parametrize("user_agent,meta", [
+    ("ClashMetaForAndroid/2.11.18.Meta", True),
+    ("ClashMeta/1.19.0", True),
+    ("ClashForAndroid/2.5.12", False),
+])
+def test_android_subscription_exports_supported_protocols(client, db, monkeypatch, tags, user_agent, meta):
+    from app.utils.jwt import create_subscription_token
+    from app.xray.config import XRayConfig
+
+    raw = json.loads(os.environ["XRAY_JSON"])
+    tls_stream = {"network": "tcp", "security": "tls",
+                  "tlsSettings": raw["inbounds"][1]["streamSettings"]["tlsSettings"]}
+    raw["inbounds"][0]["streamSettings"] = tls_stream
+    raw["inbounds"].append({
+        "tag": "VLESS TLS", "protocol": "vless", "port": 8444,
+        "settings": {"clients": []},
+        "streamSettings": tls_stream,
+    })
+    monkeypatch.setattr(xray, "config", XRayConfig(raw))
+    user = crud.create_user(db, UserCreate(
+        username="alice", proxies={"trojan": {}, "vless": {}, "hysteria2": {}},
+    ))
+    user.sub_tags = tags
+    user.sub_url_prefix = "https://sub.example.com" if tags else ""
+    db.commit()
+    for name, inbound, port in (("Trojan", "Trojan TCP", "8443"),
+                                ("VLESS", "VLESS TLS", "8444"),
+                                ("Hysteria2", "Hysteria2 HK", "443")):
+        make_node(db, name=name, inbound=inbound, port=port)
+
+    token = create_subscription_token(user.username)
+    response = client.get(f"/sub/{token}", headers={"User-Agent": user_agent})
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/yaml")
+    nodes = yaml.safe_load(response.text)["proxies"]
+    assert {node["type"] for node in nodes} == ({"trojan", "vless", "hysteria2"} if meta else {"trojan"})
+
+
 def test_node_round_trip_keeps_inheriting_and_can_restore_defaults(client, db, monkeypatch):
     user = make_user(db, tags="hk")
     payload = {"name": "HK", "server": "hy2.example.com", "port": "443", "tag": "hk",

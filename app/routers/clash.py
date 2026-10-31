@@ -639,7 +639,7 @@ def generate_subscription(db: Session, dbuser: User, user_agent: str):
         option.support_rule_script = True
         option.support_rule_logic = True
         option.support_rule_provider = True
-    elif re.match(r'^(clash-verge|clash[.-]?meta|clashx meta|flclash|mihomo)(?=/|\s|$)', nocase_ua):
+    elif re.match(r'^(clash-verge|clash[.-]?meta|clashmetaforandroid|clashx meta|flclash|mihomo)(?=/|\s|$)', nocase_ua):
         option.support_reality = True
         option.support_vless = True
         option.support_hysteria2 = True
